@@ -16,20 +16,27 @@ object EmotionInference {
     fun infer(landmarks: List<NormalizedLandmark>): EmotionResult {
         if (landmarks.isEmpty()) return EmotionResult("None", 0f, 0f, 0f, 0f)
 
-        // EAR (Eye Aspect Ratio) - simplified for one eye (left)
-        // Indices: left eye upper: 159, lower: 145, inner: 133, outer: 33
-        val ear = calculateDistance(landmarks[159], landmarks[145]) / calculateDistance(landmarks[133], landmarks[33])
+        // Eye Distance for normalization
+        val eyeDist = calculateDistance(landmarks[33], landmarks[263])
 
         // MAR (Mouth Aspect Ratio)
         // Indices: upper lip: 13, lower lip: 14, left corner: 61, right corner: 291
         val mar = calculateDistance(landmarks[13], landmarks[14]) / calculateDistance(landmarks[61], landmarks[291])
 
-        // Eyebrow Distance
+        // Normalized Eyebrow Distance (Anger/Focus)
         // Left eyebrow inner: 55, Right eyebrow inner: 285
-        val eyebrowDist = calculateDistance(landmarks[55], landmarks[285])
+        val normEyebrowDist = calculateDistance(landmarks[55], landmarks[285]) / eyeDist
+
+        // Mouth Corner Height (Smile check)
+        // Left corner: 61, Right corner: 291, Upper lip: 13, Lower lip: 14
+        val mouthWidth = calculateDistance(landmarks[61], landmarks[291])
+        val mouthCenterY = (landmarks[13].y() + landmarks[14].y()) / 2
+        val cornersY = (landmarks[61].y() + landmarks[291].y()) / 2
+        // Landmarks y increases downwards, so higher corners means smaller cornersY
+        val smileIncline = (mouthCenterY - cornersY) / mouthWidth
 
         // Head Pose (Simplified)
-        // Nose tip: 1, Left eye: 33, Right eye: 263, Left mouth: 61, Right mouth: 291
+        // Nose tip: 1, Left eye: 33, Right eye: 263
         val nose = landmarks[1]
         val leftEye = landmarks[33]
         val rightEye = landmarks[263]
@@ -44,12 +51,12 @@ object EmotionInference {
         if (mar > 0.5) {
             emotion = "Surprised"
             confidence = min(mar * 1.5f, 1f)
-        } else if (mar > 0.1 && mar < 0.4 && ear < 0.25) {
+        } else if (smileIncline > 0.08f || (mar > 0.15f && smileIncline > 0.05f)) {
             emotion = "Happy"
-            confidence = 0.9f
-        } else if (eyebrowDist < 0.05) {
+            confidence = min(smileIncline * 5f + 0.5f, 1f)
+        } else if (normEyebrowDist < 0.22f) {
             emotion = "Angry"
-            confidence = 0.85f
+            confidence = min(1f, (0.22f - normEyebrowDist) * 10f + 0.8f)
         }
 
         return EmotionResult(emotion, confidence, pitch, yaw, roll)
